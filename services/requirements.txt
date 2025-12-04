@@ -1,0 +1,10 @@
+pandas
+spanish-dni
+fillpdf
+selenium
+openpyxl
+requests
+supabase
+python-dotenv
+
+
