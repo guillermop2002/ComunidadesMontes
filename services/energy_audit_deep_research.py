@@ -150,8 +150,13 @@ class DeepResearchAuditor:
         
         # 5. Wake Effect (Jensen Model - Simplified for N turbines)
         # If N > 1, apply efficiency loss.
-        # k = 0.075 (standard) or 0.1 (forest)
-        k = 0.1 if roughness_class == "forest" else 0.075
+        # k depends on terrain roughness (turbulence intensity)
+        if roughness_class == "offshore":
+            k = 0.04 # Low turbulence, wakes persist long
+        elif roughness_class == "plains":
+            k = 0.075 # Standard onshore
+        else:
+            k = 0.1 # Forest/Complex (High turbulence, wakes recover fast)
         
         # Simplified "Park Efficiency" formula derived from Jensen for infinite array
         # This is a heuristic for the "Deep Research" requirement without full CFD
@@ -163,7 +168,11 @@ class DeepResearchAuditor:
             # Typical losses: 10-15%
             # Forest (k=0.1) -> Lower losses (~8%)
             # Plains (k=0.075) -> Higher losses (~12%)
-            base_loss = 0.12 if k == 0.075 else 0.08
+            # Offshore (k=0.04) -> Highest losses (~15-20%) if tight spacing
+            base_loss = 0.12 # Reference for plains
+            if k == 0.1: base_loss = 0.08
+            if k == 0.04: base_loss = 0.15
+            
             wake_loss_pct = base_loss * (1 - 1/num_turbines) # Increases with N
             
         final_power_kw = corrected_power_kw * num_turbines * (1 - wake_loss_pct)
@@ -175,6 +184,14 @@ class DeepResearchAuditor:
         # Mock for now if no token, or fetch real
         # For Deep Research, we need hourly matching
         dates = pd.date_range(start_date, end_date, freq='h')
+        # TODO: When ESIOS token is available, uncomment this block:
+        # if self.esios_token:
+        #     headers = {'Content-Type': 'application/json', 'x-api-key': self.esios_token}
+        #     # Fetch indicators 805 (Spot) and 1001 (PVPC)
+        #     # url = f"{self.esios_base_url}/indicators/805?start_date={start_date}&end_date={end_date}"
+        #     # ... implementation ...
+        #     pass
+
         # Mock "Duck Curve" prices: Low at noon, High at night
         hours = dates.hour
         base_price = 50.0 # Float to avoid casting errors
@@ -200,7 +217,9 @@ class DeepResearchAuditor:
         if config['type'] == 'solar':
             production = self.simulate_solar(meteo, lat, lon, float(config['peak_power_kwp']))
         else:
-            production = self.simulate_wind(meteo, int(config['num_turbines']), config['turbine_model'])
+            # Pass roughness class from config (default to forest if missing)
+            roughness = config.get('roughness', 'forest')
+            production = self.simulate_wind(meteo, int(config['num_turbines']), config['turbine_model'], roughness_class=roughness)
             
         # 3. Economics
         prices = self.get_prices(start, end)

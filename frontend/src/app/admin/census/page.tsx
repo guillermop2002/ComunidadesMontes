@@ -1,16 +1,50 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+
+// Definición de tipos basada en tu schema.sql
+type Person = {
+    id: string;
+    dni: string;
+    name: string;
+    phone_number: string | null;
+    role: string;
+    residency_years: number;
+};
 
 export default function CensusPage() {
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState<any>(null);
-    const [filePath, setFilePath] = useState('C:\\Users\\Guillermo\\Documents\\Herramienta comunidades\\services\\census_mock.xlsx');
+    // Estados para la importación
+    const [importLoading, setImportLoading] = useState(false);
+    const [importResult, setImportResult] = useState<any>(null);
+    const [filePath, setFilePath] = useState('C:\\Ruta\\al\\archivo\\censo.xlsx');
 
+    // Estados para la gestión de datos
+    const [people, setPeople] = useState<Person[]>([]);
+    const [loadingData, setLoadingData] = useState(true);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState<Partial<Person>>({});
+
+    // 1. Cargar datos al iniciar
+    useEffect(() => {
+        fetchCensus();
+    }, []);
+
+    const fetchCensus = async () => {
+        setLoadingData(true);
+        const { data, error } = await supabase
+            .from('people')
+            .select('*')
+            .order('name');
+
+        if (error) console.error('Error cargando censo:', error);
+        else setPeople(data || []);
+        setLoadingData(false);
+    };
+
+    // 2. Lógica de Importación (Python Bridge)
     const handleImport = async () => {
-        setLoading(true);
-        setResult(null);
-
+        setImportLoading(true);
         try {
             const response = await fetch('/api/py-bridge', {
                 method: 'POST',
@@ -20,91 +54,176 @@ export default function CensusPage() {
                     data: { file_path: filePath }
                 })
             });
-
             const data = await response.json();
-            setResult(data);
+            setImportResult(data);
+            if (data.status === 'success') {
+                fetchCensus(); // Recargar la tabla si salió bien
+            }
         } catch (error) {
-            console.error('Error:', error);
-            alert('Error importing census');
+            alert('Error importando censo');
         } finally {
-            setLoading(false);
+            setImportLoading(false);
+        }
+    };
+
+    // 3. Lógica de Edición
+    const startEditing = (person: Person) => {
+        setEditingId(person.id);
+        setEditForm(person);
+    };
+
+    const cancelEditing = () => {
+        setEditingId(null);
+        setEditForm({});
+    };
+
+    const saveChanges = async () => {
+        if (!editingId) return;
+
+        const { error } = await supabase
+            .from('people')
+            .update({
+                name: editForm.name,
+                dni: editForm.dni,
+                phone_number: editForm.phone_number,
+                residency_years: editForm.residency_years
+            })
+            .eq('id', editingId);
+
+        if (error) {
+            alert('Error al guardar: ' + error.message);
+        } else {
+            setEditingId(null);
+            fetchCensus(); // Refrescar datos
         }
     };
 
     return (
-        <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-800">Censo Digital (Casa Aberta)</h1>
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <h1 className="text-3xl font-bold text-gray-800">Censo Digital (Casa Aberta)</h1>
+                <span className="bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full">
+                    {people.length} Comuneros Registrados
+                </span>
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Import Tool */}
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Importar Excel</h2>
-                    <p className="text-sm text-gray-500 mb-4">
-                        Selecciona el archivo Excel con el censo actual para validarlo y migrarlo a la base de datos segura.
+            {/* SECCIÓN 1: HERRAMIENTA DE IMPORTACIÓN */}
+            <details className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 group">
+                <summary className="text-xl font-semibold text-gray-700 cursor-pointer list-none flex justify-between items-center">
+                    <span>📥 Importar Excel Masivo</span>
+                    <span className="text-sm text-gray-500 group-open:rotate-180 transition">▼</span>
+                </summary>
+
+                <div className="mt-4 space-y-4 border-t pt-4">
+                    <p className="text-sm text-gray-500">
+                        Ruta local del archivo Excel (Servidor):
                     </p>
-
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Ruta del Archivo (Servidor)</label>
-                            <input
-                                type="text"
-                                className="w-full p-2 border rounded-lg bg-gray-50"
-                                value={filePath}
-                                onChange={(e) => setFilePath(e.target.value)}
-                            />
-                        </div>
-
+                    <div className="flex gap-4">
+                        <input
+                            type="text"
+                            className="flex-1 p-2 border rounded-lg bg-gray-50"
+                            value={filePath}
+                            onChange={(e) => setFilePath(e.target.value)}
+                        />
                         <button
                             onClick={handleImport}
-                            disabled={loading}
-                            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 transition disabled:opacity-50"
+                            disabled={importLoading}
+                            className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                         >
-                            {loading ? 'Procesando...' : 'Validar e Importar'}
+                            {importLoading ? 'Procesando...' : 'Importar'}
                         </button>
                     </div>
+                    {importResult && (
+                        <div className={`p-4 rounded-lg text-sm ${importResult.status === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                            {JSON.stringify(importResult.summary || importResult)}
+                        </div>
+                    )}
                 </div>
+            </details>
 
-                {/* Results Display */}
-                <div className="space-y-6">
-                    {result && result.status === 'success' && (
-                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                            <h3 className="text-lg font-bold mb-4 text-green-700">Importación Completada</h3>
-
-                            <div className="grid grid-cols-3 gap-4 mb-6">
-                                <div className="text-center p-3 bg-gray-50 rounded-lg">
-                                    <p className="text-gray-500 text-xs">Total</p>
-                                    <p className="text-xl font-bold">{result.summary.total_rows}</p>
-                                </div>
-                                <div className="text-center p-3 bg-green-50 rounded-lg">
-                                    <p className="text-green-600 text-xs">Válidos</p>
-                                    <p className="text-xl font-bold text-green-700">{result.summary.valid_rows}</p>
-                                </div>
-                                <div className="text-center p-3 bg-red-50 rounded-lg">
-                                    <p className="text-red-600 text-xs">Errores</p>
-                                    <p className="text-xl font-bold text-red-700">{result.summary.invalid_rows}</p>
-                                </div>
-                            </div>
-
-                            {result.summary.invalid_rows > 0 && (
-                                <div>
-                                    <h4 className="font-bold text-sm text-red-700 mb-2">Errores Detectados (Muestra)</h4>
-                                    <div className="bg-red-50 p-3 rounded-lg text-xs space-y-2">
-                                        {result.preview_invalid.map((err: any, i: number) => (
-                                            <div key={i} className="border-b border-red-100 last:border-0 pb-1">
-                                                <span className="font-bold">{err.Nombre} {err.Apellidos}:</span> {err.error_detail}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {result && result.error && (
-                        <div className="bg-red-100 text-red-800 p-4 rounded-lg">
-                            Error: {result.error}
-                        </div>
-                    )}
+            {/* SECCIÓN 2: TABLA DE DATOS */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DNI</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono (Auth)</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Antigüedad</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {loadingData ? (
+                                <tr><td colSpan={5} className="text-center py-8">Cargando datos...</td></tr>
+                            ) : people.map((person) => (
+                                <tr key={person.id} className="hover:bg-gray-50 transition">
+                                    {editingId === person.id ? (
+                                        // MODO EDICIÓN
+                                        <>
+                                            <td className="px-6 py-4">
+                                                <input
+                                                    className="w-full border p-1 rounded"
+                                                    value={editForm.name}
+                                                    onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <input
+                                                    className="w-full border p-1 rounded uppercase"
+                                                    value={editForm.dni}
+                                                    onChange={e => setEditForm({ ...editForm, dni: e.target.value })}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <input
+                                                    className="w-full border p-1 rounded bg-yellow-50 border-yellow-300"
+                                                    value={editForm.phone_number || ''}
+                                                    placeholder="+34 600..."
+                                                    onChange={e => setEditForm({ ...editForm, phone_number: e.target.value })}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <input
+                                                    type="number"
+                                                    className="w-20 border p-1 rounded"
+                                                    value={editForm.residency_years}
+                                                    onChange={e => setEditForm({ ...editForm, residency_years: parseInt(e.target.value) })}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4 text-right space-x-2">
+                                                <button onClick={saveChanges} className="text-green-600 font-bold hover:underline">Guardar</button>
+                                                <button onClick={cancelEditing} className="text-gray-500 hover:underline">Cancelar</button>
+                                            </td>
+                                        </>
+                                    ) : (
+                                        // MODO LECTURA
+                                        <>
+                                            <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{person.name}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-gray-500">{person.dni}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {person.phone_number ? (
+                                                    <span className="text-gray-700">{person.phone_number}</span>
+                                                ) : (
+                                                    <span className="text-red-400 text-xs italic">Sin teléfono</span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-gray-500">{person.residency_years} años</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <button
+                                                    onClick={() => startEditing(person)}
+                                                    className="text-indigo-600 hover:text-indigo-900"
+                                                >
+                                                    Editar
+                                                </button>
+                                            </td>
+                                        </>
+                                    )}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

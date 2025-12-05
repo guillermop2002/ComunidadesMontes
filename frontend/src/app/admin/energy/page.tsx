@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function EnergyAuditPage() {
     const [loading, setLoading] = useState(false);
@@ -15,8 +15,26 @@ export default function EnergyAuditPage() {
         end_date: '2024-03-31',
         company_payment: '250000',
         peak_power_kwp: '1000', // For solar
-        year: '2023' // For solar
+        year: '2023', // For solar
+        roughness: 'forest' // Default: Galicia/Forest
     });
+
+    // Load from localStorage on mount
+    useEffect(() => {
+        const saved = localStorage.getItem('energyAuditConfig');
+        if (saved) {
+            try {
+                setFormData(JSON.parse(saved));
+            } catch (e) {
+                console.error("Error loading config", e);
+            }
+        }
+    }, []);
+
+    // Save to localStorage on change
+    useEffect(() => {
+        localStorage.setItem('energyAuditConfig', JSON.stringify(formData));
+    }, [formData]);
 
     // Removed auditMode state, defaulting to Deep Research behavior
 
@@ -124,6 +142,19 @@ export default function EnergyAuditPage() {
                                         onChange={(e) => setFormData({ ...formData, num_turbines: e.target.value })}
                                     />
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Terreno (Rugosidad)</label>
+                                    <select
+                                        className="w-full p-2 border rounded-lg"
+                                        value={formData.roughness}
+                                        onChange={(e) => setFormData({ ...formData, roughness: e.target.value })}
+                                    >
+                                        <option value="forest">Bosque / Complejo (Galicia)</option>
+                                        <option value="plains">Llanura / Cultivos</option>
+                                        <option value="offshore">Mar / Lago</option>
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">Afecta al modelo de estelas (Jensen) y perfil de viento.</p>
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Inicio</label>
@@ -194,8 +225,8 @@ export default function EnergyAuditPage() {
                         <>
                             {/* Main Alert Card */}
                             <div className={`p-6 rounded-xl shadow-md border-l-8 ${(result.financial_analysis?.discrepancy_pct > 15 || (result.revenue_eur && result.revenue_eur > formData.company_payment * 1.15)) ? 'bg-red-50 border-red-500' :
-                                    (result.financial_analysis?.discrepancy_pct > 5 || (result.revenue_eur && result.revenue_eur > formData.company_payment * 1.05)) ? 'bg-yellow-50 border-yellow-500' :
-                                        'bg-green-50 border-green-500'
+                                (result.financial_analysis?.discrepancy_pct > 5 || (result.revenue_eur && result.revenue_eur > formData.company_payment * 1.05)) ? 'bg-yellow-50 border-yellow-500' :
+                                    'bg-green-50 border-green-500'
                                 }`}>
                                 <h3 className="text-lg font-bold mb-2">Resultado de la Auditoría</h3>
                                 <p className="text-2xl font-bold mb-1">

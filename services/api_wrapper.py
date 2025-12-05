@@ -98,6 +98,14 @@ def main():
             result = handle_document_generation(data)
         elif action == "deep_audit":
             result = handle_deep_audit(data)
+        elif action == "canon_update":
+            from canon_indexer import CanonIndexer
+            indexer = CanonIndexer()
+            result = indexer.calculate_update(
+                float(data.get('current_canon')),
+                data.get('old_date'),
+                data.get('new_date')
+            )
         else:
             result = {"error": f"Unknown action: {action}"}
 
